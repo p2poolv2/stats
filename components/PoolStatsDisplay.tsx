@@ -1,5 +1,4 @@
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 
 import { PoolStats } from '../lib/entities/PoolStats';
 import {
@@ -131,23 +130,15 @@ export default function PoolStatsDisplay({
                 <div className="stat-value text-2xl">
                   {stats.hashrate6hr && stats.diff
                     ? formatDuration(
-                      calculateAverageTimeToBlock(
-                        stats.hashrate6hr,
-                        (stats.accepted * BigInt(10000)) /
-                        BigInt(Math.round(Number(stats.diff) * 100))
+                        calculateAverageTimeToBlock(
+                          stats.hashrate6hr,
+                          (stats.accepted * BigInt(10000)) /
+                            BigInt(Math.round(Number(stats.diff) * 100))
+                        )
                       )
-                    )
                     : 'N/A'}
                 </div>
-                {/* <div className="stat-desc">
-                  <Link
-                    href="https://mempool.space/mining/pool/solock"
-                    target="_blank"
-                    className="link text-primary"
-                  >
-                    Found Blocks
-                  </Link>
-                </div> */}
+                {}
               </div>
             </div>
           </div>
