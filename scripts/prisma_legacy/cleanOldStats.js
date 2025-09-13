@@ -17,9 +17,9 @@ async function cleanOldStats() {
     const deletedPoolStats = await prisma.poolStats.deleteMany({
       where: {
         timestamp: {
-          lt: oneWeekAgo
-        }
-      }
+          lt: oneWeekAgo,
+        },
+      },
     });
     console.log(`Deleted ${deletedPoolStats.count} old pool stats`);
 
@@ -27,9 +27,9 @@ async function cleanOldStats() {
     const deletedUserStats = await prisma.userStats.deleteMany({
       where: {
         timestamp: {
-          lt: twoDaysAgo
-        }
-      }
+          lt: twoDaysAgo,
+        },
+      },
     });
     console.log(`Deleted ${deletedUserStats.count} old user stats`);
 
@@ -37,9 +37,9 @@ async function cleanOldStats() {
     const deletedWorkerStats = await prisma.workerStats.deleteMany({
       where: {
         timestamp: {
-          lt: oneDayAgo
-        }
-      }
+          lt: oneDayAgo,
+        },
+      },
     });
     console.log(`Deleted ${deletedWorkerStats.count} old worker stats`);
 

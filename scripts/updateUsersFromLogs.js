@@ -60,7 +60,9 @@ async function updateUser(address, userData) {
 
 async function updateWorker(address, workerData) {
   if (!workerData.workername) {
-    console.log(`Worker data for address ${address} is missing a valid name. Skipping.`);
+    console.log(
+      `Worker data for address ${address} is missing a valid name. Skipping.`
+    );
     return;
   }
 
@@ -123,8 +125,8 @@ async function updateUserAndWorkers(username) {
       return;
     }
     await prisma.$transaction(async () => {
-      await updateUser(username, userData,);
-      await Promise.all(userData.worker.map(w => updateWorker(username, w)));
+      await updateUser(username, userData);
+      await Promise.all(userData.worker.map((w) => updateWorker(username, w)));
     });
     console.log(`Updated user and workers for: ${username}`);
   } catch (error) {
@@ -156,7 +158,7 @@ async function updateUsersFromLogs() {
     // Process users in batches
     for (let i = 0; i < users.length; i += batchSize) {
       const batch = users.slice(i, i + batchSize);
-      await Promise.all(batch.map(user => updateUserAndWorkers(user)));
+      await Promise.all(batch.map((user) => updateUserAndWorkers(user)));
     }
 
     console.log('All users and workers updated successfully');
