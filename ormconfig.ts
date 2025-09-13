@@ -13,8 +13,8 @@ const config: DataSourceOptions = {
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV === 'development',
   ssl: {
-    rejectUnauthorized: false
+    rejectUnauthorized: false,
   },
 };
 
-export default config; 
+export default config;

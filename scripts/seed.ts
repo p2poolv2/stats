@@ -32,19 +32,23 @@ async function fetchPoolStats(): Promise<Partial<PoolStatsData>> {
   let data: string;
 
   console.log('Fetching pool stats...');
-  const apiUrl = (process.env.API_URL || 'https://solo.ckpool.org') + '/pool/pool.status';
+  const apiUrl =
+    (process.env.API_URL || 'https://solo.ckpool.org') + '/pool/pool.status';
 
   try {
     const response = await fetch(apiUrl);
     data = await response.text();
   } catch (error: any) {
-    if(error.cause?.code == "ERR_INVALID_URL") {
+    if (error.cause?.code == 'ERR_INVALID_URL') {
       data = fs.readFileSync(apiUrl, 'utf-8');
-    } else throw(error);
+    } else throw error;
   }
 
   const jsonLines = data.split('\n').filter(Boolean);
-  const parsedData = jsonLines.reduce((acc, line) => ({ ...acc, ...JSON.parse(line) }), {});
+  const parsedData = jsonLines.reduce(
+    (acc, line) => ({ ...acc, ...JSON.parse(line) }),
+    {}
+  );
   return parsedData as PoolStatsData;
 }
 
@@ -63,9 +67,9 @@ async function seed() {
   try {
     console.log('Fetching pool stats...');
     const stats = await fetchPoolStats();
-    
+
     console.log('Saving pool stats to database...');
-    
+
     const db = await getDb();
     const poolStatsRepository = db.getRepository(PoolStats);
 

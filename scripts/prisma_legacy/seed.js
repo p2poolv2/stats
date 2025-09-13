@@ -22,7 +22,6 @@ async function fetchPoolStatsFromFile() {
   return data;
 }
 
-
 async function fetchPoolStats() {
   console.log('Fetching pool stats...');
   var data;
@@ -32,7 +31,10 @@ async function fetchPoolStats() {
     data = await fetchPoolStatsFromFile();
   }
   const jsonLines = data.split('\n').filter(Boolean);
-  const parsedData = jsonLines.reduce((acc, line) => ({ ...acc, ...JSON.parse(line) }), {});
+  const parsedData = jsonLines.reduce(
+    (acc, line) => ({ ...acc, ...JSON.parse(line) }),
+    {}
+  );
   return parsedData;
 }
 
