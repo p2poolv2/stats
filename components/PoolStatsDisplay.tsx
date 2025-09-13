@@ -1,6 +1,6 @@
 import dynamic from 'next/dynamic';
 
-import { PoolStatsType } from '../lib/api';
+import { PoolStats } from '../lib/entities/PoolStats';
 import {
   formatNumber,
   formatHashrate,
@@ -16,8 +16,8 @@ const CountdownTimer = dynamic(() => import('./CountdownTimer'), {
 });
 
 interface PoolStatsDisplayProps {
-  stats: PoolStatsType;
-  historicalStats: PoolStatsType[];
+  stats: PoolStats;
+  historicalStats: PoolStats[];
 }
 
 export default function PoolStatsDisplay({
@@ -26,13 +26,18 @@ export default function PoolStatsDisplay({
 }: PoolStatsDisplayProps) {
   // Helper function to format values
   const formatValue = (key: string, value: any): string => {
+    console.log(key, value);
     if (key.startsWith('hashrate')) {
       return formatHashrate(value);
     } else if (key === 'diff') {
       return `${formatNumber(value)}%`;
       // const networkDiff = (stats.accepted * BigInt(10000)) / BigInt(Math.round(Number(stats.diff) * 100));
       // return `${(Number(networkDiff) / 1e12).toFixed(2)}T`;
-    } else if (typeof value === 'bigint' || typeof value === 'number') {
+    } else if (
+      typeof value === 'bigint' ||
+      typeof value === 'number' ||
+      typeof value === 'string'
+    ) {
       return formatNumber(value);
     } else if (key === 'timestamp') {
       return new Date(value).toISOString().slice(0, 19) + ' UTC';
@@ -128,7 +133,7 @@ export default function PoolStatsDisplay({
                     ? formatDuration(
                         calculateAverageTimeToBlock(
                           stats.hashrate6hr,
-                          (stats.accepted * BigInt(10000)) /
+                          (BigInt(stats.accepted) * BigInt(10000)) /
                             BigInt(Math.round(Number(stats.diff) * 100))
                         )
                       )
