@@ -10,6 +10,7 @@ import {
   getPercentageChangeColor,
   calculateAverageTimeToBlock,
 } from '../utils/helpers';
+import Link from 'next/link';
 
 const CountdownTimer = dynamic(() => import('./CountdownTimer'), {
   ssr: false,
