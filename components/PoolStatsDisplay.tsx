@@ -136,7 +136,6 @@ export default function PoolStatsDisplay({
                             BigInt(Math.round(Number(stats.diff) * 100))
                         )
                       )
-                    )
                     : 'N/A'}
                 </div>
                 {<div className="stat-desc">
