@@ -108,8 +108,9 @@ export default function Header() {
       <dialog ref={modalRef} className="modal modal-bottom sm:modal-middle">
         <form method="dialog" className="modal-box">
           <h3
-            className={`font-bold text-lg ${isError ? 'text-error' : 'text-success'
-              }`}
+            className={`font-bold text-lg ${
+              isError ? 'text-error' : 'text-success'
+            }`}
           >
             {isError ? 'Error' : 'Success'}
           </h3>
