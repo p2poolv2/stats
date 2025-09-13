@@ -64,7 +64,11 @@ async function updateWorker(address, workerData) {
     return;
   }
 
-  const workerName = workerData.workername; // Show full worker name
+  const workerName = workerData.workername.includes('.')
+    ? workerData.workername.split('.')[1]
+    : workerData.workername.includes('_')
+      ? workerData.workername.split('_')[1]
+      : '';
 
   const worker = await prisma.worker.upsert({
     where: {
