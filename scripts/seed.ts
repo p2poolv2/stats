@@ -3,13 +3,13 @@ import * as fs from 'fs';
 import { getDb } from '../lib/db';
 import { PoolStats } from '../lib/entities/PoolStats';
 
-// Define an interface for the pool stats
+// CKPool-compatible stats interface
 interface PoolStatsData {
   runtime: string;
-  Users: string;
-  Workers: string;
-  Idle: string;
-  Disconnected: string;
+  users: string;
+  workers: string;
+  idle: string;
+  disconnected: string;
   hashrate1m: string;
   hashrate5m: string;
   hashrate15m: string;
@@ -27,61 +27,75 @@ interface PoolStatsData {
   SPS1h: string;
 }
 
-// Using partial to allow for fields that may or may not be present but are not required
-async function fetchPoolStats(): Promise<Partial<PoolStatsData>> {
-  let data: string;
+//  Read P2Pool JSON from disk 
+const filePath = process.env.POOL_STATS_FILE || './pool_stats.json';
 
-  console.log('Fetching pool stats...');
-  const apiUrl = (process.env.API_URL || 'https://solo.ckpool.org') + '/pool/pool.status';
-
+async function readP2PoolJson(): Promise<any> {
   try {
-    const response = await fetch(apiUrl);
-    data = await response.text();
-  } catch (error: any) {
-    if(error.cause?.code == "ERR_INVALID_URL") {
-      data = fs.readFileSync(apiUrl, 'utf-8');
-    } else throw(error);
+    const data = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    throw new Error(`Failed to read P2Pool JSON file: ${error.message}`);
   }
-
-  const jsonLines = data.split('\n').filter(Boolean);
-  const parsedData = jsonLines.reduce((acc, line) => ({ ...acc, ...JSON.parse(line) }), {});
-  return parsedData as PoolStatsData;
 }
 
-// Function to convert hashrate with units to string
-const convertHashrate = (value: string): string => {
-  const units = { E: 1e18, P: 1e15, T: 1e12, G: 1e9, M: 1e6, K: 1e3 };
-  const match = value.match(/^(\d+(\.\d+)?)([EPTGMK])$/);
-  if (match) {
-    const [, num, , unit] = match;
-    return Math.round(parseFloat(num) * units[unit]).toString();
-  }
-  return value;
-};
+//  Transform to CKPool format 
+function p2poolToCkpool(p2pool: any): Partial<PoolStatsData> {
+  return {
+    runtime: String(p2pool.start_time ?? 0),
+    users: String(p2pool.num_users ?? 0),
+    workers: String(p2pool.num_workers ?? 0),
+    idle: String(p2pool.num_idle_users ?? 0),
+    disconnected: "0", 
+    hashrate1m: String(p2pool.hashrate_1m ?? 0),
+    hashrate5m: String(p2pool.hashrate_5m ?? 0),
+    hashrate15m: String(p2pool.hashrate_15m ?? 0),
+    hashrate1hr: String(p2pool.hashrate_1hr ?? 0),
+    hashrate6hr: String(p2pool.hashrate_6hr ?? 0),
+    hashrate1d: String(p2pool.hashrate_1d ?? 0),
+    hashrate7d: String(p2pool.hashrate_7d ?? 0),
+    diff: String(p2pool.difficulty ?? 0),
+    accepted: String(p2pool.accepted ?? 0),
+    rejected: String(p2pool.rejected ?? 0),
+    bestshare: String(p2pool.bestshare ?? 0),
+    SPS1m: String(p2pool.shares_per_second_1m ?? 0),
+    SPS5m: String(p2pool.shares_per_second_5m ?? 0),
+    SPS15m: String(p2pool.shares_per_second_15m ?? 0),
+    SPS1h: String(p2pool.shares_per_second_1h ?? 0)
+    // Optionally, handle timestamp as 
+    // timestamp: new Date((p2pool.lastupdate ?? Date.now()) * 1000),
+  };
+}
 
+//Step 3: Unified fetch logic 
+async function fetchPoolStats(): Promise<Partial<PoolStatsData>> {
+  const p2poolJson = await readP2PoolJson();
+  return p2poolToCkpool(p2poolJson);
+}
+
+//  Step 4: Seed db using CKPool format 
 async function seed() {
   try {
-    console.log('Fetching pool stats...');
+    console.log('Reading pool stats from disk...');
     const stats = await fetchPoolStats();
     
     console.log('Saving pool stats to database...');
-    
     const db = await getDb();
     const poolStatsRepository = db.getRepository(PoolStats);
 
     const poolStats = poolStatsRepository.create({
       runtime: parseInt(stats.runtime ?? '0'),
-      users: parseInt(stats.Users ?? '0'),
-      workers: parseInt(stats.Workers ?? '0'),
-      idle: parseInt(stats.Idle ?? '0'),
-      disconnected: stats.Disconnected ? parseInt(stats.Disconnected) : 0,
-      hashrate1m: BigInt(convertHashrate(stats.hashrate1m ?? '0')),
-      hashrate5m: BigInt(convertHashrate(stats.hashrate5m ?? '0')),
-      hashrate15m: BigInt(convertHashrate(stats.hashrate15m ?? '0')),
-      hashrate1hr: BigInt(convertHashrate(stats.hashrate1hr ?? '0')),
-      hashrate6hr: BigInt(convertHashrate(stats.hashrate6hr ?? '0')),
-      hashrate1d: BigInt(convertHashrate(stats.hashrate1d ?? '0')),
-      hashrate7d: BigInt(convertHashrate(stats.hashrate7d ?? '0')),
+      users: parseInt(stats.users ?? '0'),
+      workers: parseInt(stats.workers ?? '0'),
+      idle: parseInt(stats.idle ?? '0'),
+      disconnected: stats.disconnected ? parseInt(stats.disconnected) : 0,
+      hashrate1m: BigInt(stats.hashrate1m ?? '0'),
+      hashrate5m: BigInt(stats.hashrate5m ?? '0'),
+      hashrate15m: BigInt(stats.hashrate15m ?? '0'),
+      hashrate1hr: BigInt(stats.hashrate1hr ?? '0'),
+      hashrate6hr: BigInt(stats.hashrate6hr ?? '0'),
+      hashrate1d: BigInt(stats.hashrate1d ?? '0'),
+      hashrate7d: BigInt(stats.hashrate7d ?? '0'),
       diff: stats.diff,
       accepted: stats.accepted,
       rejected: stats.rejected,
