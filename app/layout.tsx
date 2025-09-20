@@ -9,9 +9,8 @@ import Providers from '../components/Providers';
 const lato = Lato({ subsets: ['latin'], weight: ['400', '700'] });
 
 export const metadata: Metadata = {
-  title: 'CKstats',
-  description:
-    'Real-time and historical statistics for the CKPool Bitcoin mining pool using data from their API.',
+  title: 'CKstats (hydrapool)',
+  description: 'CKPool stats for Hydrapool. View your stats and hashrate.',
 };
 
 export default function RootLayout({

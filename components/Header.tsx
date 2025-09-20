@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import ThemeController from './ThemeController';
-import { validateBitcoinAddress } from '../utils/validateBitcoinAddress';
 
 export default function Header() {
   const [address, setAddress] = useState('');
@@ -60,13 +59,6 @@ export default function Header() {
 
   const handleAddAddress = async () => {
     const trimmedAddress = address.trim();
-    if (!validateBitcoinAddress(trimmedAddress)) {
-      setModalMessage('Invalid Bitcoin address');
-      setIsError(true);
-      modalRef.current?.showModal();
-      return;
-    }
-
     addUserMutation.mutate(trimmedAddress);
   };
 
@@ -74,14 +66,14 @@ export default function Header() {
     <header className="navbar bg-base-100">
       <div className="flex-1 hidden md:inline-flex">
         <Link href="/" className="btn btn-ghost normal-case text-xl">
-          CKPool Stats
+          Hydrapool Stats
         </Link>
       </div>
       <div className="flex-none gap-1 sm:gap-2 flex-grow md:flex-grow-0">
         <div className="form-control flex-grow md:flex-grow-0">
           <input
             type="text"
-            placeholder="Enter Bitcoin address"
+            placeholder="Enter username"
             className="input input-bordered w-full md:w-96 text-sm"
             value={address}
             onChange={(e) => setAddress(e.target.value.trim())}
