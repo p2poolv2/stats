@@ -69,7 +69,7 @@ interface P2PoolJson {
 }
 
 // Path to P2Pool JSON stats
-const filePath = process.env.POOL_STATS_FILE || './pool_stats.json';
+const filePath = process.env.POOL_STATS_DIR + '/pool_stats.json';
 
 // Reads P2Pool JSON from disk
 function readP2PoolJson(): P2PoolJson {

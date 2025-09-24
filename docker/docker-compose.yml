@@ -1,0 +1,72 @@
+services:
+  p2pool-stats-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: p2pool-stats
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - p2pool_stats_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  stats:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - API_URL=${API_URL}
+      - DB_HOST=p2pool-stats-postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=p2pool-stats
+      - DB_SSL=${DB_SSL:-false}
+      - DB_SSL_REJECT_UNAUTHORIZED=${DB_SSL_REJECT_UNAUTHORIZED:-false}
+      - POOL_STATS_DIR=/app/pool_stats/
+    depends_on:
+      p2pool-stats-postgres:
+        condition: service_healthy
+    volumes:
+      - ${POOL_STATS_DIR}:/app/pool_stats:ro
+    command: sh -c "pnpm migration:run && pnpm seed && pnpm start"
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      - API_URL=${API_URL}
+      - DB_HOST=p2pool-stats-postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=p2pool-stats
+      - DB_SSL=false
+      - DB_SSL_REJECT_UNAUTHORIZED=${DB_SSL_REJECT_UNAUTHORIZED:-false}
+    depends_on:
+      p2pool-stats-postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ${POOL_STATS_DIR}:/app/pool_stats:ro
+    command: sh -c "
+      while true; do
+        pnpm seed && sleep 60 &
+        pnpm update-users-from-logs && sleep 60 &
+        wait
+      done &
+      while true; do
+        sleep 7200
+        pnpm cleanup
+      done"
+
+volumes:
+  p2pool_stats_postgres_data:
