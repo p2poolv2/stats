@@ -1,32 +1,38 @@
-# CK Stats
+# P2Poolv2/Hydrapool Stats
 
-This project displays real-time and historical statistics for the CKPool Bitcoin mining pool using data from their API.
-
-## Features
-
-- Real-time pool statistics
-- Historical data chart
-- Responsive design with themed display
-- User and worker information
-
-## Technologies Used
-
-- Next.js
-- Tailwind CSS
-- daisyUI
-- Recharts
-- TypeORM
+This project displays real-time and historical statistics for P2Poolv2
+nodes and Hydrapool mining pool using data from the local disk.
 
 ## Deployment
 
-1. Clone the repository (git clone https://github.com/mrv777/ckstats.git)
+### Docker
+
+Clone the repository (git clone https://github.com/p2poolv2/stats)
+
+```
+docker compose build
+```
+
+```
+docker compose up postgres
+docker compose up stats
+```
+
+You will need to setup a cronjob on your host to run the following 
+
+1. `pnpm update-users-from-logs` every minute
+2. `pnpm cleanup` every five minutes
+
+### Developer setup
+
+1. Clone the repository (git clone https://github.com/p2poolv2/stats)
 2. Install pnpm: `curl -fsSL https://get.pnpm.io/install.sh | bash`
 3. Install packages if needed: `sudo apt install postgresql postgresql-contrib nodejs nginx`
 4. Go to the directory: `cd ckstats`
 5. Set up the environment variables in `.env`
   - Example:
    ```
-   API_URL="https://solo.ckpool.org"
+   API_URL="<path to p2poolv2 stats directory>"
    DB_HOST="server"
    DB_PORT="port"
    DB_USER="username"
@@ -36,7 +42,6 @@ This project displays real-time and historical statistics for the CKPool Bitcoin
    Replace `username`, `password`, `server`, `port`, `database` with your actual PostgreSQL credentials, server details, and database names.
    You can also set the DB_SSL to true if you want to use SSL and set the DB_SSL_REJECT_UNAUTHORIZED to true if you want to reject untrusted SSL certificates (like self-signed certificates).
    If PostgreSQL is running locally, you can make `DB_HOST` `/var/run/postgresql/` (which connects via a Unix socket).  The username and password are then ignored (authentication is done based on the Unix user connection to the socket).
-   If ckpool is running locally you can make `API_URL` the path to the logs directory.  For example `/home/ckpool-testnet/solobtc/logs`.
    
 6. Install dependencies: `pnpm install`
 7. Run database migrations: `pnpm migration:run`
@@ -48,7 +53,7 @@ This project displays real-time and historical statistics for the CKPool Bitcoin
    - Add lines to run the scripts.  Example:
      ```
      */1 * * * * cd /path/to/your/project && /usr/local/bin/pnpm seed
-     */1 * * * * cd /path/to/your/project && /usr/local/bin/pnpm update-users
+		*/1 * * * * cd /path/to/your/project && /usr/local/bin/pnpm update-users
      5 */2 * * * cd /path/to/your/project && /usr/local/bin/pnpm cleanup
      ```
    - Save and exit the editor
