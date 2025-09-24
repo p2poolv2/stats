@@ -1,4 +1,5 @@
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 
 import { PoolStats } from '../lib/entities/PoolStats';
 import {
@@ -10,7 +11,6 @@ import {
   getPercentageChangeColor,
   calculateAverageTimeToBlock,
 } from '../utils/helpers';
-import Link from 'next/link';
 
 const CountdownTimer = dynamic(() => import('./CountdownTimer'), {
   ssr: false,
@@ -139,15 +139,17 @@ export default function PoolStatsDisplay({
                       )
                     : 'N/A'}
                 </div>
-                {<div className="stat-desc">
-                  <Link
-                    href="https://mempool.space/mining/pool/hydrapool"
-                    target="_blank"
-                    className="link text-primary"
-                  >
-                    Found Blocks
-                  </Link>
-                </div>}
+                {
+                  <div className="stat-desc">
+                    <Link
+                      href="https://mempool.space/mining/pool/hydrapool"
+                      target="_blank"
+                      className="link text-primary"
+                    >
+                      Found Blocks
+                    </Link>
+                  </div>
+                }
               </div>
             </div>
           </div>
