@@ -39,12 +39,6 @@ const Footer: React.FC = () => {
           </a>
         </div>
       </div>
-      <div>
-        <p>Built on CKStats. Donation address for original author.</p>
-        <p className="break-all">
-          Donations: bc1qz9vvexjmexe8pr2aueuz6x0v94ulkx2m2sp6lr
-        </p>
-      </div>
     </footer>
   );
 };
