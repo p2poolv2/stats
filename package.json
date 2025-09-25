@@ -8,7 +8,7 @@
     "start": "NODE_OPTIONS='--max-old-space-size=6144' next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
-    "seed": "ts-node -P tsconfig.scripts.json scripts/seed.ts",
+    "seed": "ts-node -r dotenv/config -P tsconfig.scripts.json scripts/seed.ts",
     "update-users": "ts-node -P tsconfig.scripts.json scripts/updateUsers.ts",
     "update-users-from-logs": "ts-node -P tsconfig.scripts.json scripts/updateUsersFromLogs.js",
     "cleanup": "ts-node -P tsconfig.scripts.json scripts/cleanOldStats.ts",
@@ -20,6 +20,7 @@
     "migration:run:skip": "ts-node -P tsconfig.scripts.json ./scripts/migration.ts --skip-initial"
   },
   "dependencies": {
+    "@prisma/client": "^6.16.2",
     "@tanstack/react-query": "^5.59.0",
     "bitcoinjs-lib": "^6.1.6",
     "daisyui": "^4.12.10",
@@ -36,6 +37,7 @@
     "@testing-library/react": "^16.0.1",
     "@types/jest": "^29.5.13",
     "@types/node": "^22.7.4",
+    "@types/pg": "^8.11.2",
     "@types/react": "^18.3.10",
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
@@ -55,7 +57,6 @@
     "tailwindcss": "^3.4.13",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
-    "@types/pg": "^8.11.2",
     "typescript": "^5.6.2"
   }
 }

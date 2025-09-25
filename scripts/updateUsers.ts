@@ -9,237 +9,138 @@ import { WorkerStats } from '../lib/entities/WorkerStats';
 import { convertHashrate } from '../utils/helpers';
 
 const BATCH_SIZE = 10;
-// const INACTIVE_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours
 
-interface WorkerData {
-  workername: string;
-  hashrate1m: number;
-  hashrate5m: number;
-  hashrate1hr: number;
-  hashrate1d: number;
-  hashrate7d: number;
-  lastshare: number;
-  shares: string;
-  bestshare: string;
-  bestever: string;
+interface ComputedHashRate {
+  hashrate_1m?: number;
+  hashrate_5m?: number;
+  hashrate_1hr?: number;
+  hashrate_1d?: number;
+  hashrate_7d?: number;
 }
 
-interface UserData {
-  authorised: number;
-  hashrate1m: number;
-  hashrate5m: number;
-  hashrate1hr: number;
-  hashrate1d: number;
-  hashrate7d: number;
-  lastshare: number;
-  workers: number;
-  shares: string;
-  bestshare: string;
-  bestever: string;
-  worker: WorkerData[];
+interface P2PoolWorker {
+  computed_hash_rate?: ComputedHashRate;
+  lastshare?: number;
+  shares?: string;
+  bestshare?: string;
+  bestever?: string;
 }
 
-async function updateUser(address: string): Promise<void> {
-  let userData: UserData;
+interface P2PoolUser {
+  computed_hash_rate?: ComputedHashRate;
+  workers?: Record<string, P2PoolWorker>;
+  shares?: string;
+  bestshare?: string;
+  bestever?: string;
+  authorised?: number;
+}
 
-  // Perform a last minute check to prevent directory traversal vulnerabilities
-  if (/[^a-zA-Z0-9]/.test(address)) {
-    throw new Error('updateUser(): address contains invalid characters');
-  }
+interface P2PoolJson {
+  users?: Record<string, P2PoolUser>;
+  lastupdate?: number;
+}
 
-  const apiUrl = (process.env.API_URL || 'https://solo.ckpool.org') + `/users/${address}`;
+async function updateUsersFromJson(): Promise<void> {
+  const statsFile = process.env.POOL_STATS_FILE || './pool_stats.json';
 
-  console.log('Attempting to update user stats for:', address);
+  console.log('Reading P2Pool stats from:', statsFile);
+  const raw = fs.readFileSync(statsFile, 'utf-8');
+  const json: P2PoolJson = JSON.parse(raw);
+
   const db = await getDb();
-
   try {
-    try {
-      const response = await fetch(apiUrl);
+    const userEntries = Object.entries(json.users || {});
+    console.log(`Found ${userEntries.length} users in JSON`);
 
-       if (!response.ok) {
-         throw new Error(`HTTP error! status: ${response.status}`);
-       }
+    // Process in batches
+    for (let i = 0; i < userEntries.length; i += BATCH_SIZE) {
+      const batch = userEntries.slice(i, i + BATCH_SIZE);
+      console.log(`Processing batch ${i / BATCH_SIZE + 1}`);
 
-      userData = await response.json() as UserData;
-    } catch (error: any) {
-      if (error.cause?.code == 'ERR_INVALID_URL') {
-        userData = JSON.parse(fs.readFileSync(apiUrl, 'utf-8')) as UserData;
-      } else throw error;
-    }
-    
-    await db.transaction(async (manager) => {
-      // Update or create user
-      const userRepository = manager.getRepository(User);
-      const user = await userRepository.findOne({ where: { address } });
-      if (user) {
-        user.authorised = userData.authorised.toString();
-        user.isActive = true;
-        await userRepository.save(user);
-      } else {
-        await userRepository.insert({
-          address,
-          authorised: userData.authorised.toString(),
-          isActive: true,
-          updatedAt: new Date().toISOString()
-        });
-      }
-
-      // Create a new UserStats entry
-      const userStatsRepository = manager.getRepository(UserStats);
-      const userStats = userStatsRepository.create({
-        userAddress: address,
-        hashrate1m: convertHashrate(userData.hashrate1m.toString()).toString(),
-        hashrate5m: convertHashrate(userData.hashrate5m.toString()).toString(),
-        hashrate1hr: convertHashrate(userData.hashrate1hr.toString()).toString(),
-        hashrate1d: convertHashrate(userData.hashrate1d.toString()).toString(),
-        hashrate7d: convertHashrate(userData.hashrate7d.toString()).toString(),
-        lastShare: BigInt(userData.lastshare).toString(),
-        workerCount: userData.workers,
-        shares: BigInt(userData.shares).toString(),
-        bestShare: parseFloat(userData.bestshare),
-        bestEver: BigInt(userData.bestever).toString()
-      });
-      await userStatsRepository.save(userStats);
-
-      // Update or create workers
-      const workerRepository = manager.getRepository(Worker);
-      const workerStatsRepository = manager.getRepository(WorkerStats);
-      
-      for (const workerData of userData.worker) {
-        const workerName = workerData.workername.includes('.')
-          ? workerData.workername.split('.')[1]
-          : workerData.workername.includes('_')
-            ? workerData.workername.split('_')[1]
-            : workerData.workername;
-        const worker = await workerRepository.findOne({
-          where: {
-            userAddress: address,
-            name: workerName,
-          },
-        });
-
-        const workerValues = {
-          hashrate1m: convertHashrate(workerData.hashrate1m.toString()).toString(),
-          hashrate5m: convertHashrate(workerData.hashrate5m.toString()).toString(),
-          hashrate1hr: convertHashrate(workerData.hashrate1hr.toString()).toString(),
-          hashrate1d: convertHashrate(workerData.hashrate1d.toString()).toString(),
-          hashrate7d: convertHashrate(workerData.hashrate7d.toString()).toString(),
-          lastUpdate: new Date(workerData.lastshare * 1000),
-          shares: BigInt(workerData.shares).toString(),
-          bestShare: parseFloat(workerData.bestshare),
-          bestEver: BigInt(workerData.bestever).toString(),
-        };
-
-        let workerId: number;
-        if (worker) {
-          Object.assign(worker, workerValues);
-          const savedWorker = await workerRepository.save(worker);
-          workerId = savedWorker.id;
-        } else {
-          const newWorker = await workerRepository.save({
-            userAddress: address,
-            name: workerName,
-            updatedAt: new Date().toISOString(),
-            ...workerValues,
-          });
-          workerId = newWorker.id;
-        }
-
-        // Create a new WorkerStats entry
-        const workerStats = workerStatsRepository.create({
-          workerId,
-          hashrate1m: workerValues.hashrate1m,
-          hashrate5m: workerValues.hashrate5m,
-          hashrate1hr: workerValues.hashrate1hr,
-          hashrate1d: workerValues.hashrate1d,
-          hashrate7d: workerValues.hashrate7d,
-          shares: workerValues.shares,
-          bestShare: workerValues.bestShare,
-          bestEver: workerValues.bestEver
-        });
-        await workerStatsRepository.save(workerStats);
-      }
-    });
-
-    console.log(`Updated user and workers for: ${address}`);
-  } catch (error) {
-    const userRepository = db.getRepository(User);
-    await userRepository.update({ address }, { isActive: false });
-    console.log(`Marked user ${address} as inactive`);
-    throw error;
-  }
-}
-
-// async function updateInactiveUsers(): Promise<void> {
-//   const db = await getDb();
-//   const userRepository = db.getRepository(User);
-//   const userStatsRepository = db.getRepository(UserStats);
-
-//   const inactiveThreshold = new Date(Date.now() - INACTIVE_THRESHOLD);
-
-//   const users = await userStatsRepository
-//     .createQueryBuilder('stats')
-//     .select('DISTINCT stats.userAddress')
-//     .where('stats.timestamp < :threshold', { threshold: inactiveThreshold })
-//     .getRawMany();
-
-//   for (const user of users) {
-//     await userRepository.update(
-//       { address: user.userAddress },
-//       { isActive: false }
-//     );
-//     console.log(`Marked user ${user.userAddress} as inactive`);
-//   }
-// }
-
-async function main() {
-  let db;
-  
-  try {
-    db = await getDb();
-    const userRepository = db.getRepository(User);
-
-    const users = await userRepository.find({
-      where: { isActive: true },
-      order: { address: 'ASC' },
-    });
-
-    if (users.length === 0) {
-      console.log('No active users found');
-    }
-
-    // Process users in batches
-    for (let i = 0; i < users.length; i += BATCH_SIZE) {
-      const batch = users.slice(i, i + BATCH_SIZE);
-      console.log(`Processing batch ${i / BATCH_SIZE + 1} of ${Math.ceil(users.length / BATCH_SIZE)}`);
-      
       await Promise.all(
-        batch.map(async (user) => {
-          try {
-            await updateUser(user.address);
-          } catch (error) {
-            console.error(`Failed to update user ${user.address}:`, error);
-          }
+        batch.map(async ([address, user]) => {
+          await db.transaction(async (manager) => {
+            const userRepository = manager.getRepository(User);
+            const userStatsRepository = manager.getRepository(UserStats);
+            const workerRepository = manager.getRepository(Worker);
+            const workerStatsRepository = manager.getRepository(WorkerStats);
+
+            // Upsert user
+            let dbUser = await userRepository.findOne({ where: { address } });
+            if (!dbUser) {
+              dbUser = userRepository.create({
+                address,
+                authorised: String(user.authorised || 0),
+                isActive: true,
+              });
+            } else {
+              dbUser.isActive = true;
+              dbUser.authorised = String(user.authorised || 0);
+            }
+            await userRepository.save(dbUser);
+
+            // Insert user stats
+            const hashrate = user.computed_hash_rate || {};
+            const userStats = userStatsRepository.create({
+              userAddress: address,
+              hashrate1m: convertHashrate((hashrate.hashrate_1m || 0).toString()).toString(),
+              hashrate5m: convertHashrate((hashrate.hashrate_5m || 0).toString()).toString(),
+              hashrate1hr: convertHashrate((hashrate.hashrate_1hr || 0).toString()).toString(),
+              hashrate1d: convertHashrate((hashrate.hashrate_1d || 0).toString()).toString(),
+              hashrate7d: convertHashrate((hashrate.hashrate_7d || 0).toString()).toString(),
+              shares: String(user.shares || 0),
+              bestShare: parseFloat(user.bestshare || '0'),
+              bestEver: String(user.bestever || 0),
+              workerCount: Object.keys(user.workers || {}).length,
+              lastShare: String(user.workers ? Math.max(...Object.values(user.workers).map(w => w.lastshare || 0)) : 0),
+            });
+            await userStatsRepository.save(userStats);
+
+            // Workers
+            for (const [workerName, worker] of Object.entries(user.workers || {})) {
+              const wHashrate = worker.computed_hash_rate || {};
+              let dbWorker = await workerRepository.findOne({
+                where: { userAddress: address, name: workerName },
+              });
+
+              const workerValues = {
+                hashrate1m: convertHashrate((wHashrate.hashrate_1m || 0).toString()).toString(),
+                hashrate5m: convertHashrate((wHashrate.hashrate_5m || 0).toString()).toString(),
+                hashrate1hr: convertHashrate((wHashrate.hashrate_1hr || 0).toString()).toString(),
+                hashrate1d: convertHashrate((wHashrate.hashrate_1d || 0).toString()).toString(),
+                hashrate7d: convertHashrate((wHashrate.hashrate_7d || 0).toString()).toString(),
+                shares: String(worker.shares || 0),
+                bestShare: parseFloat(worker.bestshare || '0'),
+                bestEver: String(worker.bestever || 0),
+                lastUpdate: new Date((worker.lastshare || 0) * 1000),
+              };
+
+              if (dbWorker) {
+                Object.assign(dbWorker, workerValues);
+              } else {
+                dbWorker = workerRepository.create({
+                  userAddress: address,
+                  name: workerName,
+                  ...workerValues,
+                });
+              }
+              const savedWorker = await workerRepository.save(dbWorker);
+
+              // WorkerStats snapshot
+              const workerStats = workerStatsRepository.create({
+                workerId: savedWorker.id,
+                ...workerValues,
+              });
+              await workerStatsRepository.save(workerStats);
+            }
+          });
         })
       );
     }
-
-    // await updateInactiveUsers();
-  } catch (error) {
-    console.error('Error in main loop:', error);
-    throw error;
   } finally {
-    // Ensure database connection is always closed if it was established
-    if (db) {
-      try {
-        await db.destroy();
-        console.log('Database connection closed');
-      } catch (error) {
-        console.error('Error closing database connection:', error);
-      }
-    }
+    await db.destroy();
   }
 }
 
-// Run the script
-main().catch(console.error); 
+
+updateUsersFromJson().catch(console.error);
