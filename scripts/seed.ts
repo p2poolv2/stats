@@ -5,7 +5,6 @@ import { PoolStats } from '../lib/entities/PoolStats';
 import { User } from '../lib/entities/User';
 import { UserStats } from '../lib/entities/UserStats';
 
-
 interface ComputedHashRate {
   hashrate_1m?: number;
   hashrate_5m?: number;
@@ -69,13 +68,17 @@ interface PoolStatsData {
   timestamp: Date;
 }
 
-
 const filePath = process.env.POOL_STATS_DIR + '/pool_stats.json';
 const HASHRATE_FACTOR = Math.pow(2, 32);
 
 function readP2PoolJson(): P2PoolJson {
-  const data = fs.readFileSync(filePath, 'utf-8');
-  return JSON.parse(data);
+  try {
+    const data = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(data);
+  } catch (e) {
+    console.warn('Could not read pool_stats.json, returning empty object.');
+    return {};
+  }
 }
 
 function scaleHashrate(value?: number | null): string {
@@ -120,13 +123,10 @@ function p2poolToCkpool(p2pool: P2PoolJson): PoolStatsData {
     SPS5m: p2pool.computed_share_rate?.shares_per_second_5m ?? 0,
     SPS15m: p2pool.computed_share_rate?.shares_per_second_15m ?? 0,
     SPS1h: p2pool.computed_share_rate?.shares_per_second_1h ?? 0,
-    timestamp: new Date(
-      ((p2pool.lastupdate ?? Math.floor(Date.now() / 1000)) * 1000)
-    ),
+    timestamp: new Date(((p2pool.lastupdate ?? Math.floor(Date.now() / 1000)) * 1000)),
   };
 }
 
-// Seed
 async function seed() {
   let db: any;
   try {
@@ -134,7 +134,11 @@ async function seed() {
     const p2poolJson = readP2PoolJson();
     const stats = p2poolToCkpool(p2poolJson);
 
+    console.log('Establishing database connection...');
     db = await getDb();
+
+    console.log('Schema ready. Proceeding to save data...');
+
     const poolRepo = db.getRepository(PoolStats);
     const userRepo = db.getRepository(User);
     const userStatsRepo = db.getRepository(UserStats);
@@ -152,7 +156,6 @@ async function seed() {
     });
     await poolRepo.save(poolStats);
 
-    // Top 10 users by 1-day hashrate
     const usersArray = Object.entries(p2poolJson.users || {});
     const topUsers = usersArray
       .map(([address, user]) => ({
@@ -162,25 +165,27 @@ async function seed() {
       }))
       .sort((a, b) => b.hashrate - a.hashrate)
       .slice(0, 10);
+  for (const u of topUsers) {
+  const userEntity = userRepo.create({
+    address: u.address,
+  });
+  await userRepo.save(userEntity);
 
-    for (const u of topUsers) {
-      
-      const userEntity = userRepo.create({
-        address: u.address, 
-      });
-      await userRepo.save(userEntity);
-
-      const userStatsEntity = userStatsRepo.create({
-        userAddress: u.address,
-        hashrate1d: BigInt(u.hashrate),
-        timestamp: stats.timestamp,
-      });
-      await userStatsRepo.save(userStatsEntity);
-    }
+  const userStatsEntity = userStatsRepo.create({
+    userAddress: u.address,
+    hashrate1m: BigInt(u.raw.computed_hash_rate?.hashrate_1m ?? 0),
+    hashrate5m: BigInt(u.raw.computed_hash_rate?.hashrate_5m ?? 0),
+    hashrate15m: BigInt(u.raw.computed_hash_rate?.hashrate_15m ?? 0),
+    hashrate1hr: BigInt(u.raw.computed_hash_rate?.hashrate_1hr ?? 0),
+    hashrate1d: BigInt(u.hashrate),
+    timestamp: stats.timestamp,
+  });
+  await userStatsRepo.save(userStatsEntity);
+}
 
     console.log('Database seeded successfully');
-  } catch (error) {
-    console.error('Error seeding database:', error);
+  } catch (error: any) {
+    console.error('Error seeding database:', error.message ?? error);
   } finally {
     if (db) await db.destroy();
   }
