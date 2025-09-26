@@ -2,9 +2,33 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import { getDb } from '../lib/db';
 import { PoolStats } from '../lib/entities/PoolStats';
-import { User } from '../lib/entities/User';
-import { UserStats } from '../lib/entities/UserStats';
 
+// CKPool-compatible stats interface
+interface PoolStatsData {
+  runtime: number;
+  users: number;
+  workers: number;
+  idle: number;
+  disconnected: number;
+  hashrate1m: string;
+  hashrate5m: string;
+  hashrate15m: string;
+  hashrate1hr: string;
+  hashrate6hr: string;
+  hashrate1d: string;
+  hashrate7d: string;
+  diff: string;
+  accepted: string;
+  rejected: string;
+  bestshare: string;
+  SPS1m: string;
+  SPS5m: string;
+  SPS15m: string;
+  SPS1h: string;
+  timestamp: Date;
+}
+
+// Define P2Pool JSON schema
 interface ComputedHashRate {
   hashrate_1m?: number;
   hashrate_5m?: number;
@@ -44,62 +68,46 @@ interface P2PoolJson {
   };
 }
 
-interface PoolStatsData {
-  runtime: number;
-  users: number;
-  workers: number;
-  idle: number;
-  disconnected: number;
-  hashrate1m: string;
-  hashrate5m: string;
-  hashrate15m: string;
-  hashrate1hr: string;
-  hashrate6hr: string;
-  hashrate1d: string;
-  hashrate7d: string;
-  diff: number;
-  accepted: string;
-  rejected: string;
-  bestshare: string;
-  SPS1m: number;
-  SPS5m: number;
-  SPS15m: number;
-  SPS1h: number;
-  timestamp: Date;
-}
-
+// Path to P2Pool JSON stats
 const filePath = process.env.POOL_STATS_DIR + '/pool_stats.json';
-const HASHRATE_FACTOR = Math.pow(2, 32);
 
+// Reads P2Pool JSON from disk
 function readP2PoolJson(): P2PoolJson {
   try {
     const data = fs.readFileSync(filePath, 'utf-8');
     return JSON.parse(data);
-  } catch (e) {
-    console.warn('Could not read pool_stats.json, returning empty object.');
-    return {};
+  } catch (error: any) {
+    throw new Error(`Failed to read P2Pool JSON file: ${error.message}`);
   }
 }
 
+// Utility constant for 2^32
+const HASHRATE_FACTOR = Math.pow(2, 32);
+
+// Helper for scaling hashrate fields
 function scaleHashrate(value?: number | null): string {
   return BigInt(Math.round(Number(value || 0) * HASHRATE_FACTOR)).toString();
 }
 
+// Transform P2Pool format to CKPool format
 function p2poolToCkpool(p2pool: P2PoolJson): PoolStatsData {
-  const usersList = Object.values(p2pool.users || {});
+  const userList = Object.values(p2pool.users || {});
   let hashrateFields = p2pool.computed_hashrate;
 
-  if (!hashrateFields && usersList.length > 0) {
-    hashrateFields = usersList[0].computed_hash_rate;
+  // Pool-level
+  if (!hashrateFields && userList.length > 0) {
+    hashrateFields = userList[0].computed_hash_rate;
   }
 
-  if (!hashrateFields && usersList.length > 0) {
-    const workers = Object.values(usersList[0].workers || {});
+  // First worker
+  if (!hashrateFields && userList.length > 0) {
+    const workers = Object.values(userList[0].workers || {});
     if (workers.length > 0 && workers[0].computed_hash_rate) {
       hashrateFields = workers[0].computed_hash_rate;
     }
   }
 
+  // Fallback
   if (!hashrateFields) hashrateFields = {};
 
   return {
@@ -115,37 +123,43 @@ function p2poolToCkpool(p2pool: P2PoolJson): PoolStatsData {
     hashrate6hr: scaleHashrate(hashrateFields.hashrate_6hr),
     hashrate1d: scaleHashrate(hashrateFields.hashrate_1d),
     hashrate7d: scaleHashrate(hashrateFields.hashrate_7d),
-    diff: p2pool.difficulty ?? 0,
-    accepted: String(p2pool.accepted ?? 0),
-    rejected: String(p2pool.rejected ?? 0),
-    bestshare: String(p2pool.bestshare ?? 0),
-    SPS1m: p2pool.computed_share_rate?.shares_per_second_1m ?? 0,
-    SPS5m: p2pool.computed_share_rate?.shares_per_second_5m ?? 0,
-    SPS15m: p2pool.computed_share_rate?.shares_per_second_15m ?? 0,
-    SPS1h: p2pool.computed_share_rate?.shares_per_second_1h ?? 0,
-    timestamp: new Date(((p2pool.lastupdate ?? Math.floor(Date.now() / 1000)) * 1000)),
+    diff: String(p2pool.difficulty ?? '0'),
+    accepted: String(p2pool.accepted ?? '0'),
+    rejected: String(p2pool.rejected ?? '0'),
+    bestshare: String(p2pool.bestshare ?? '0'),
+    SPS1m: String(p2pool.computed_share_rate?.shares_per_second_1m ?? '0'),
+    SPS5m: String(p2pool.computed_share_rate?.shares_per_second_5m ?? '0'),
+    SPS15m: String(p2pool.computed_share_rate?.shares_per_second_15m ?? '0'),
+    SPS1h: String(p2pool.computed_share_rate?.shares_per_second_1h ?? '0'),
+    timestamp: new Date(
+      ((p2pool.lastupdate ?? Math.floor(Date.now() / 1000)) * 1000)
+    ),
   };
 }
 
+// Unified fetch logic
+async function fetchPoolStats(): Promise<PoolStatsData> {
+  const p2poolJson = readP2PoolJson();
+  return p2poolToCkpool(p2poolJson);
+}
+
+// Seed db using CKPool format
 async function seed() {
   let db: any;
   try {
     console.log('Reading pool stats from disk...');
-    const p2poolJson = readP2PoolJson();
-    const stats = p2poolToCkpool(p2poolJson);
+    const stats = await fetchPoolStats();
 
-    console.log('Establishing database connection...');
+    console.log('Saving pool stats to database...');
     db = await getDb();
+    const poolStatsRepository = db.getRepository(PoolStats);
 
-    console.log('Schema ready. Proceeding to save data...');
-
-    const poolRepo = db.getRepository(PoolStats);
-    const userRepo = db.getRepository(User);
-    const userStatsRepo = db.getRepository(UserStats);
-
-    // Save pool stats
-    const poolStats = poolRepo.create({
-      ...stats,
+    const poolStats = poolStatsRepository.create({
+      runtime: stats.runtime,
+      users: stats.users,
+      workers: stats.workers,
+      idle: stats.idle,
+      disconnected: stats.disconnected,
       hashrate1m: BigInt(stats.hashrate1m),
       hashrate5m: BigInt(stats.hashrate5m),
       hashrate15m: BigInt(stats.hashrate15m),
@@ -153,45 +167,34 @@ async function seed() {
       hashrate6hr: BigInt(stats.hashrate6hr),
       hashrate1d: BigInt(stats.hashrate1d),
       hashrate7d: BigInt(stats.hashrate7d),
+      diff: stats.diff,
+      accepted: stats.accepted,
+      rejected: stats.rejected,
+      bestshare: stats.bestshare,
+      SPS1m: stats.SPS1m,
+      SPS5m: stats.SPS5m,
+      SPS15m: stats.SPS15m,
+      SPS1h: stats.SPS1h,
+      timestamp: stats.timestamp,
     });
-    await poolRepo.save(poolStats);
 
-    const usersArray = Object.entries(p2poolJson.users || {});
-    const topUsers = usersArray
-      .map(([address, user]) => ({
-        address,
-        hashrate: user.computed_hash_rate?.hashrate_1d ?? 0,
-        raw: user,
-      }))
-      .sort((a, b) => b.hashrate - a.hashrate)
-      .slice(0, 10);
-  for (const u of topUsers) {
-  const userEntity = userRepo.create({
-    address: u.address,
-  });
-  await userRepo.save(userEntity);
-
-  const userStatsEntity = userStatsRepo.create({
-    userAddress: u.address,
-    hashrate1m: BigInt(u.raw.computed_hash_rate?.hashrate_1m ?? 0),
-    hashrate5m: BigInt(u.raw.computed_hash_rate?.hashrate_5m ?? 0),
-    hashrate15m: BigInt(u.raw.computed_hash_rate?.hashrate_15m ?? 0),
-    hashrate1hr: BigInt(u.raw.computed_hash_rate?.hashrate_1hr ?? 0),
-    hashrate1d: BigInt(u.hashrate),
-    timestamp: stats.timestamp,
-  });
-  await userStatsRepo.save(userStatsEntity);
-}
-
+    await poolStatsRepository.save(poolStats);
     console.log('Database seeded successfully');
-  } catch (error: any) {
-    console.error('Error seeding database:', error.message ?? error);
+  } catch (error) {
+    console.error('Error seeding database:', error);
   } finally {
-    if (db) await db.destroy();
+    if (db) {
+      await db.destroy();
+    }
   }
 }
 
 (async () => {
-  await seed();
-  console.log('Seeding completed successfully.');
+  try {
+    await seed();
+    console.log('Seeding completed successfully.');
+  } catch (error) {
+    console.error('Error during seeding:', error);
+    process.exit(1);
+  }
 })();
