@@ -1,185 +1,86 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+require('dotenv').config(); 
 const fs = require('fs');
 const path = require('path');
+const { getDb } = require('../lib/db');
+const { User } = require('../lib/entities/User');
+const { UserStats } = require('../lib/entities/UserStats');
+const { Worker } = require('../lib/entities/Worker');
+const { WorkerStats } = require('../lib/entities/WorkerStats');
 
-const convertHashrate = (value) => {
-  const units = { P: 1e15, T: 1e12, G: 1e9, M: 1e6, K: 1e3 };
-  // Updated regex to handle scientific notation
-  const match = value.match(/^(\d+(\.\d+)?(?:e[+-]\d+)?)([PTGMK])$/i);
-  if (match) {
-    const [, num, , unit] = match;
-    // Parse the number, which now handles scientific notation
-    const parsedNum = parseFloat(num);
-    return BigInt(Math.round(parsedNum * units[unit.toUpperCase()]));
-  }
-  return value;
-};
+const HASHRATE_FACTOR = Math.pow(2, 32);
 
-async function readUserData(filename) {
-  const filePath = path.join(process.env.LOGS_DIR, `users/${filename}`);
-  if (!fs.existsSync(filePath)) {
-    console.log(`User data file not found: ${filePath}`);
-    return null;
-  } else {
-    console.log(`Reading user data from file: ${filePath}`);
-    const data = await fs.promises.readFile(filePath, 'utf8');
-    return JSON.parse(data);
-  }
+function scaleHashrate(value) {
+  return BigInt(Math.round(Number(value || 0) * HASHRATE_FACTOR));
 }
 
-async function updateUser(address, userData) {
-  await prisma.user.upsert({
-    where: { address },
-    update: {
-      authorised: BigInt(userData.authorised),
-    },
-    create: {
-      address,
-      authorised: BigInt(userData.authorised),
-    },
-  });
+async function updateUsersFromJson() {
+  const filePath = path.join(process.env.LOGS_DIR || path.resolve(__dirname, '..'), 'pool_stats.json');
 
-  // Create a new UserStats entry
-  await prisma.userStats.create({
-    data: {
-      user: { connect: { address } },
-      hashrate1m: convertHashrate(userData.hashrate1m),
-      hashrate5m: convertHashrate(userData.hashrate5m),
-      hashrate1hr: convertHashrate(userData.hashrate1hr),
-      hashrate1d: convertHashrate(userData.hashrate1d),
-      hashrate7d: convertHashrate(userData.hashrate7d),
-      lastShare: BigInt(userData.lastshare),
-      workerCount: userData.workers,
-      shares: BigInt(userData.shares),
-      bestShare: parseFloat(userData.bestshare),
-      bestEver: BigInt(userData.bestever),
-    },
-  });
-}
+  let db;
+  try {
+    const data = fs.readFileSync(filePath, 'utf-8');
+    const json = JSON.parse(data);
 
-async function updateWorker(address, workerData) {
-  if (!workerData.workername) {
-    console.log(`Worker data for address ${address} is missing a valid name. Skipping.`);
-    return;
-  }
+    const usersArray = Object.entries(json.users || {});
+    console.log(`Found ${usersArray.length} users in pool_stats.json`);
 
-  const workerName = workerData.workername; // Show full worker name
+    db = await getDb();
+    const userRepo = db.getRepository(User);
+    const userStatsRepo = db.getRepository(UserStats);
+    const workerRepo = db.getRepository(Worker);
+    const workerStatsRepo = db.getRepository(WorkerStats);
 
-  const worker = await prisma.worker.upsert({
-    where: {
-      userAddress_name: {
+    for (const [address, user] of usersArray) {
+      const userEntity = userRepo.create({ address });
+      await userRepo.save(userEntity);
+
+      const userStatsEntity = userStatsRepo.create({
         userAddress: address,
-        name: workerName,
-      },
-    },
-    update: {
-      hashrate1m: convertHashrate(workerData.hashrate1m),
-      hashrate5m: convertHashrate(workerData.hashrate5m),
-      hashrate1hr: convertHashrate(workerData.hashrate1hr),
-      hashrate1d: convertHashrate(workerData.hashrate1d),
-      hashrate7d: convertHashrate(workerData.hashrate7d),
-      lastUpdate: new Date(workerData.lastshare * 1000),
-      shares: BigInt(workerData.shares),
-      bestShare: parseFloat(workerData.bestshare),
-      bestEver: BigInt(workerData.bestever),
-    },
-    create: {
-      userAddress: address,
-      name: workerName,
-      hashrate1m: convertHashrate(workerData.hashrate1m),
-      hashrate5m: convertHashrate(workerData.hashrate5m),
-      hashrate1hr: convertHashrate(workerData.hashrate1hr),
-      hashrate1d: convertHashrate(workerData.hashrate1d),
-      hashrate7d: convertHashrate(workerData.hashrate7d),
-      lastUpdate: new Date(workerData.lastshare * 1000),
-      shares: BigInt(workerData.shares),
-      bestShare: parseFloat(workerData.bestshare),
-      bestEver: BigInt(workerData.bestever),
-    },
-  });
+        hashrate1m: scaleHashrate(user.computed_hash_rate?.hashrate_1m),
+        hashrate5m: scaleHashrate(user.computed_hash_rate?.hashrate_5m),
+        hashrate1hr: scaleHashrate(user.computed_hash_rate?.hashrate_1hr),
+        hashrate1d: scaleHashrate(user.computed_hash_rate?.hashrate_1d),
+        hashrate7d: scaleHashrate(user.computed_hash_rate?.hashrate_7d),
+        timestamp: new Date(((json.lastupdate ?? Math.floor(Date.now() / 1000)) * 1000)),
+      });
+      await userStatsRepo.save(userStatsEntity);
 
-  // Create a new WorkerStats entry
-  await prisma.workerStats.create({
-    data: {
-      workerId: worker.id,
-      hashrate1m: convertHashrate(workerData.hashrate1m),
-      hashrate5m: convertHashrate(workerData.hashrate5m),
-      hashrate1hr: convertHashrate(workerData.hashrate1hr),
-      hashrate1d: convertHashrate(workerData.hashrate1d),
-      hashrate7d: convertHashrate(workerData.hashrate7d),
-      shares: BigInt(workerData.shares),
-      bestShare: parseFloat(workerData.bestshare),
-      bestEver: BigInt(workerData.bestever),
-    },
-  });
-}
+      const workers = Object.entries(user.workers || {});
+      for (const [workerName, workerData] of workers) {
+        const workerEntity = workerRepo.create({
+          userAddress: address,
+          name: workerName,
+          hashrate1m: scaleHashrate(workerData.computed_hash_rate?.hashrate_1m),
+          hashrate5m: scaleHashrate(workerData.computed_hash_rate?.hashrate_5m),
+          hashrate1hr: scaleHashrate(workerData.computed_hash_rate?.hashrate_1hr),
+          hashrate1d: scaleHashrate(workerData.computed_hash_rate?.hashrate_1d),
+          hashrate7d: scaleHashrate(workerData.computed_hash_rate?.hashrate_7d),
+        });
+        await workerRepo.save(workerEntity);
 
-async function updateUserAndWorkers(username) {
-  try {
-    const userData = await readUserData(username);
-    if (!userData) {
-      console.log(`No user data found for username: ${username}`);
-      return;
-    }
-    await prisma.$transaction(async () => {
-      await updateUser(username, userData,);
-      await Promise.all(userData.worker.map(w => updateWorker(username, w)));
-    });
-    console.log(`Updated user and workers for: ${username}`);
-  } catch (error) {
-    console.error(`Error updating user ${username}:`, error);
-  }
-}
+        const workerStatsEntity = workerStatsRepo.create({
+          workerId: workerEntity.id,
+          hashrate1m: scaleHashrate(workerData.computed_hash_rate?.hashrate_1m),
+          hashrate5m: scaleHashrate(workerData.computed_hash_rate?.hashrate_5m),
+          hashrate1hr: scaleHashrate(workerData.computed_hash_rate?.hashrate_1hr),
+          hashrate1d: scaleHashrate(workerData.computed_hash_rate?.hashrate_1d),
+          hashrate7d: scaleHashrate(workerData.computed_hash_rate?.hashrate_7d),
+          timestamp: new Date(((json.lastupdate ?? Math.floor(Date.now() / 1000)) * 1000)),
+        });
+        await workerStatsRepo.save(workerStatsEntity);
+      }
 
-async function updateUsersFromLogs() {
-  try {
-    let usersDir = path.join(process.env.LOGS_DIR, 'users');
-    const files = fs.readdirSync(usersDir);
-    console.log(`Found ${files.length} files in ${usersDir}`);
-    if (files.length === 0) {
-      console.log('No files found in the users directory.');
-      return;
+      console.log(`Updated user and workers for: ${address}`);
     }
 
-    // Get directories only and save them as userNames
-    const users = [];
-    for (const file of files) {
-      users.push(file);
-    }
-
-    console.log(`Found ${users.length} user directories`);
-
-    // Define batch size for processing
-    const batchSize = 5;
-
-    // Process users in batches
-    for (let i = 0; i < users.length; i += batchSize) {
-      const batch = users.slice(i, i + batchSize);
-      await Promise.all(batch.map(user => updateUserAndWorkers(user)));
-    }
-
-    console.log('All users and workers updated successfully');
-  } catch (error) {
-    console.error('Error updating users:', error);
+    console.log('All users and workers updated successfully (JSON updated)');
+  } catch (err) {
+    console.error('Error updating users:', err);
   } finally {
-    await prisma.$disconnect();
-    // Force garbage collection if running in Node.js with the --expose-gc flag
-    if (global.gc) {
-      global.gc();
-    }
+    if (db) await db.destroy();
   }
 }
 
 (async () => {
-  try {
-    await updateUsersFromLogs();
-  } catch (error) {
-    console.error('Unhandled error:', error);
-  } finally {
-    // Ensure that Prisma client is disconnected
-    await prisma.$disconnect();
-    // Ensure that the process exits even if there are any hanging promises
-    process.exit(0);
-  }
+  await updateUsersFromJson();
 })();
